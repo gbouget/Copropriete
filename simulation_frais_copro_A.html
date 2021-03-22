@@ -1,0 +1,616 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="UTF-8"/>
+	<title>Simulation des frais de copropriété</title>
+	<script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
+
+</head>
+
+<body>
+	
+	<div id="app" class="container">
+		<h1>Simulation des frais de copropriété - Îlot A</h1>
+		<h2>Budget prévisionnel simplifié</h2>
+		<form>
+			<table class="table table-sm">
+				<thead>
+					<tr>
+						<th colspan="3">Budget prévisionnel de l'Association Syndicale Libre (ASL)</th>
+					</tr>
+					<tr>
+						<th>Intitulé</th>
+						<th>Montant (€)</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr v-for="item in budgetASL" :key="item.idBudget">
+						<td>
+							<input type="text" v-show = "item.edit" v-model = "item.titre"
+							:ref="'input_budgetASL_' + item.idBudget"
+							@blur= "item.edit = false; $emit('update')"
+							@keyup.enter = "item.edit=false; $emit('update')" />
+							<label :ref="'label_budgetASL_' + item.idBudget" 
+							v-show = "!item.edit"
+							@click="item.edit = true;test('budgetASL',item.idBudget)">
+								{{ item.titre }} <span class="fa fa-pencil"></span>
+							</label>
+						</td>
+						<td>
+							<input :id="item.titre + '_' + item.idBudget" v-model="item.budgetPrevisionnel" type="number" min="0" @change="updateParticipationFraisASL" />
+						</td>
+						<td>
+							<button type="button" class="btn btn-outline-primary" v-on:click="supprimerBudgetPrevisionnelAsl(item.idBudget)"><span class="fa fa-trash"></span> Supprimer</button>
+						</td>
+					</tr>
+					<tr>
+						<td colspan="3" class="text-center"><button type="button" class="btn btn-outline-primary" v-on:click="ajouterLigneBudgetPrevisionnelAsl"><span class="fa fa-plus"></span> Ajouter</button> </td>
+					</tr>
+					<tr>
+						<td>Total</td>
+						<td>{{ sommeFraisASL }} €</td>
+						<td></td>
+					</tr>
+				</tbody>
+			</table>
+
+			<table class="table table-sm">
+				<thead>
+					<tr>
+						<th colspan="3">Budget prévisionnel de la copropriété de l'îlot A</th>
+					</tr>
+					<tr>
+						<th>Intitulé</th>
+						<th>Montant (€)</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr v-for="item in budgetCopro" :key="item.idBudget">
+						<td>
+							<input v-show = "item.edit" 
+							v-model = "item.titre"
+							:ref="'input_budgetCopro_' + item.idBudget"
+							@blur= "item.edit = false; $emit('update')"
+							@keyup.enter = "item.edit=false; $emit('update')" />
+							<label v-show="!item.edit" @click="item.edit = true;test('budgetCopro',item.idBudget)">{{ item.titre }} <span class="fa fa-pencil"></span></label>
+						</td>
+						<td>
+							<input :id="item.titre + '_' + item.idBudget" v-model="item.budgetPrevisionnel" type="number" min="0" @change="updateParticipationFraisASL" :disabled="item.lectureSeule == true" /></td>
+						<td>
+							<button type="button" class="btn btn-outline-primary" v-on:click="supprimerLigneBudgetPrevisionnelCopro(item.idBudget)"><span class="fa fa-trash"></span> Supprimer</button>
+						</td>
+					</tr>
+					<tr>
+						<td colspan="3" class="text-center"><button type="button" class="btn btn-outline-primary" v-on:click="ajouterLigneBudgetPrevisionnelCopro"><span class="fa fa-plus"></span> Ajouter</button> </td>
+					</tr>
+					<tr>
+						<td>Total</td>
+						<td>{{ sommeFraisCopro }} €</td>
+						<td></td>
+					</tr>
+				</tbody>
+			</table>
+			
+		</form>
+		
+		<h2>Calcul des frais en fonction du budget prévisionnel</h2>
+		<ul>
+			<li>Nombre total de lots : {{ listeLots.length }}</li>
+			<li>Somme des tantièmes (article 2.3a, état descriptif de division) : {{ sommeTantiemeCopro }}</li>
+			<li>Quote-part de l'îlot A dans la participation à l'ASL (article 23, statuts ASL) : {{ quotePartASL * 100 }} %</li>
+		</ul>
+		
+		<table class="table table-sm">
+			<thead>
+				<tr>
+					<th scope="col">Lot</th>
+					<th scope="col">Quote-part (en tantièmes)</th>
+					<th scope="col" colspan="3">Montant</th>
+				</tr>
+				<tr>
+					<th scope="col"></th>
+					<th scope="col"></th>
+					<th scope="col">Année</th>
+					<th scope="col">Trimestre</th>
+					<th scope="col">Mois</th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr class="table-primary">
+					<td>/</td>
+					<td><input type="number" id="saisirQuotePart" v-model="quotePartInput" min="0" max="100000" /></td>
+					<td>{{ Math.round( sommeFraisCopro * quotePartInput / 100000 * 100) / 100 }} €</td>
+					<td>{{ Math.round( sommeFraisCopro * quotePartInput / 100000 / 4 * 100) / 100 }} €</td>
+					<td>{{ Math.round( sommeFraisCopro * quotePartInput / 100000 / 12 * 100) / 100 }} €</td>
+				</tr>
+				<tr v-for="item in listeLots" :key="item.idLot">
+					<td>{{ item.idLot }}</td>
+					<td>{{ item.quotePart }}</td>
+					<td>{{ Math.round(sommeFraisCopro * item.quotePart / 100000 * 100) / 100 }} €</td>
+					<td>{{ Math.round(sommeFraisCopro * item.quotePart / 100000 / 4 * 100) /100 }} €</td>
+					<td>{{ Math.round(sommeFraisCopro * item.quotePart / 100000 / 12 * 100) /100 }} €</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+<script>
+
+var budgetASL = [
+	
+];
+
+var budgetCopro = [
+	
+];
+
+var listeLots = [
+{ idLot: 101, quotePart: 95 },
+{ idLot: 102, quotePart: 832 },
+{ idLot: 103, quotePart: 580 },
+{ idLot: 104, quotePart: 865 },
+{ idLot: 105, quotePart: 880 },
+{ idLot: 106, quotePart: 610 },
+{ idLot: 107, quotePart: 905 },
+{ idLot: 108, quotePart: 926 },
+{ idLot: 109, quotePart: 641 },
+{ idLot: 110, quotePart: 928 },
+{ idLot: 111, quotePart: 973 },
+{ idLot: 112, quotePart: 659 },
+{ idLot: 113, quotePart: 955 },
+{ idLot: 114, quotePart: 1000 },
+{ idLot: 201, quotePart: 477 },
+{ idLot: 202, quotePart: 1051 },
+{ idLot: 203, quotePart: 1213 },
+{ idLot: 204, quotePart: 477 },
+{ idLot: 205, quotePart: 741 },
+{ idLot: 206, quotePart: 595 },
+{ idLot: 207, quotePart: 526 },
+{ idLot: 208, quotePart: 526 },
+{ idLot: 209, quotePart: 370 },
+{ idLot: 210, quotePart: 779 },
+{ idLot: 211, quotePart: 624 },
+{ idLot: 212, quotePart: 1057 },
+{ idLot: 213, quotePart: 1274 },
+{ idLot: 214, quotePart: 395 },
+{ idLot: 215, quotePart: 935 },
+{ idLot: 216, quotePart: 608 },
+{ idLot: 217, quotePart: 576 },
+{ idLot: 218, quotePart: 1020 },
+{ idLot: 219, quotePart: 879 },
+{ idLot: 220, quotePart: 415 },
+{ idLot: 221, quotePart: 981 },
+{ idLot: 222, quotePart: 638 },
+{ idLot: 223, quotePart: 605 },
+{ idLot: 224, quotePart: 874 },
+{ idLot: 225, quotePart: 650 },
+{ idLot: 226, quotePart: 728 },
+{ idLot: 227, quotePart: 631 },
+{ idLot: 228, quotePart: 1006 },
+{ idLot: 229, quotePart: 668 },
+{ idLot: 230, quotePart: 748 },
+{ idLot: 231, quotePart: 648 },
+{ idLot: 232, quotePart: 1034 },
+{ idLot: 233, quotePart: 1277 },
+{ idLot: 234, quotePart: 996 },
+{ idLot: 235, quotePart: 877 },
+{ idLot: 236, quotePart: 802 },
+{ idLot: 237, quotePart: 12 },
+{ idLot: 301, quotePart: 478 },
+{ idLot: 302, quotePart: 1022 },
+{ idLot: 303, quotePart: 1183 },
+{ idLot: 304, quotePart: 478 },
+{ idLot: 305, quotePart: 747 },
+{ idLot: 306, quotePart: 650 },
+{ idLot: 307, quotePart: 526 },
+{ idLot: 308, quotePart: 526 },
+{ idLot: 309, quotePart: 797 },
+{ idLot: 310, quotePart: 575 },
+{ idLot: 311, quotePart: 542 },
+{ idLot: 312, quotePart: 1274 },
+{ idLot: 313, quotePart: 1057 },
+{ idLot: 314, quotePart: 912 },
+{ idLot: 315, quotePart: 595 },
+{ idLot: 316, quotePart: 1318 },
+{ idLot: 317, quotePart: 571 },
+{ idLot: 318, quotePart: 883 },
+{ idLot: 319, quotePart: 946 },
+{ idLot: 320, quotePart: 678 },
+{ idLot: 321, quotePart: 599 },
+{ idLot: 322, quotePart: 804 },
+{ idLot: 323, quotePart: 947 },
+{ idLot: 324, quotePart: 972 },
+{ idLot: 325, quotePart: 802 },
+{ idLot: 326, quotePart: 12 },
+{ idLot: 327, quotePart: 9 },
+{ idLot: 328, quotePart: 10 },
+{ idLot: 401, quotePart: 478 },
+{ idLot: 402, quotePart: 1046 },
+{ idLot: 403, quotePart: 1208 },
+{ idLot: 404, quotePart: 478 },
+{ idLot: 405, quotePart: 747 },
+{ idLot: 406, quotePart: 650 },
+{ idLot: 407, quotePart: 526 },
+{ idLot: 408, quotePart: 526 },
+{ idLot: 409, quotePart: 797 },
+{ idLot: 410, quotePart: 575 },
+{ idLot: 411, quotePart: 542 },
+{ idLot: 412, quotePart: 1274 },
+{ idLot: 413, quotePart: 1057 },
+{ idLot: 414, quotePart: 912 },
+{ idLot: 415, quotePart: 595 },
+{ idLot: 416, quotePart: 1318 },
+{ idLot: 417, quotePart: 571 },
+{ idLot: 418, quotePart: 883 },
+{ idLot: 419, quotePart: 946 },
+{ idLot: 420, quotePart: 678 },
+{ idLot: 421, quotePart: 599 },
+{ idLot: 422, quotePart: 804 },
+{ idLot: 423, quotePart: 968 },
+{ idLot: 424, quotePart: 864 },
+{ idLot: 425, quotePart: 801 },
+{ idLot: 426, quotePart: 12 },
+{ idLot: 427, quotePart: 9 },
+{ idLot: 428, quotePart: 10 },
+{ idLot: 501, quotePart: 725 },
+{ idLot: 502, quotePart: 1098 },
+{ idLot: 503, quotePart: 786 },
+{ idLot: 504, quotePart: 1156 },
+{ idLot: 505, quotePart: 1033 },
+{ idLot: 506, quotePart: 1213 },
+{ idLot: 507, quotePart: 869 },
+{ idLot: 508, quotePart: 804 },
+{ idLot: 509, quotePart: 828 },
+{ idLot: 601, quotePart: 880 },
+{ idLot: 602, quotePart: 709 },
+{ idLot: 701, quotePart: 63 },
+{ idLot: 702, quotePart: 48 },
+{ idLot: 703, quotePart: 48 },
+{ idLot: 704, quotePart: 48 },
+{ idLot: 705, quotePart: 46 },
+{ idLot: 706, quotePart: 48 },
+{ idLot: 707, quotePart: 44 },
+{ idLot: 708, quotePart: 46 },
+{ idLot: 709, quotePart: 38 },
+{ idLot: 710, quotePart: 38 },
+{ idLot: 711, quotePart: 38 },
+{ idLot: 712, quotePart: 46 },
+{ idLot: 713, quotePart: 46 },
+{ idLot: 714, quotePart: 48 },
+{ idLot: 715, quotePart: 48 },
+{ idLot: 716, quotePart: 48 },
+{ idLot: 717, quotePart: 48 },
+{ idLot: 718, quotePart: 48 },
+{ idLot: 719, quotePart: 48 },
+{ idLot: 720, quotePart: 44 },
+{ idLot: 721, quotePart: 46 },
+{ idLot: 722, quotePart: 48 },
+{ idLot: 723, quotePart: 48 },
+{ idLot: 724, quotePart: 46 },
+{ idLot: 725, quotePart: 46 },
+{ idLot: 726, quotePart: 46 },
+{ idLot: 727, quotePart: 46 },
+{ idLot: 728, quotePart: 48 },
+{ idLot: 729, quotePart: 48 },
+{ idLot: 730, quotePart: 48 },
+{ idLot: 731, quotePart: 48 },
+{ idLot: 732, quotePart: 48 },
+{ idLot: 733, quotePart: 48 },
+{ idLot: 734, quotePart: 48 },
+{ idLot: 735, quotePart: 46 },
+{ idLot: 736, quotePart: 46 },
+{ idLot: 737, quotePart: 44 },
+{ idLot: 738, quotePart: 48 },
+{ idLot: 739, quotePart: 48 },
+{ idLot: 740, quotePart: 48 },
+{ idLot: 741, quotePart: 48 },
+{ idLot: 742, quotePart: 46 },
+{ idLot: 743, quotePart: 46 },
+{ idLot: 744, quotePart: 48 },
+{ idLot: 745, quotePart: 63 },
+{ idLot: 746, quotePart: 48 },
+{ idLot: 747, quotePart: 48 },
+{ idLot: 748, quotePart: 48 },
+{ idLot: 749, quotePart: 44 },
+{ idLot: 750, quotePart: 48 },
+{ idLot: 751, quotePart: 48 },
+{ idLot: 752, quotePart: 48 },
+{ idLot: 753, quotePart: 48 },
+{ idLot: 754, quotePart: 46 },
+{ idLot: 755, quotePart: 46 },
+{ idLot: 756, quotePart: 46 },
+{ idLot: 757, quotePart: 48 },
+{ idLot: 758, quotePart: 48 },
+{ idLot: 759, quotePart: 48 },
+{ idLot: 760, quotePart: 46 },
+{ idLot: 761, quotePart: 44 },
+{ idLot: 762, quotePart: 48 },
+{ idLot: 763, quotePart: 48 },
+{ idLot: 764, quotePart: 46 },
+{ idLot: 765, quotePart: 46 },
+{ idLot: 766, quotePart: 48 },
+{ idLot: 767, quotePart: 48 },
+{ idLot: 768, quotePart: 44 },
+{ idLot: 769, quotePart: 48 },
+{ idLot: 770, quotePart: 48 },
+{ idLot: 771, quotePart: 46 },
+{ idLot: 772, quotePart: 48 },
+{ idLot: 773, quotePart: 48 },
+{ idLot: 774, quotePart: 44 },
+{ idLot: 775, quotePart: 48 },
+{ idLot: 776, quotePart: 48 },
+{ idLot: 777, quotePart: 46 },
+{ idLot: 778, quotePart: 48 },
+{ idLot: 779, quotePart: 48 },
+{ idLot: 780, quotePart: 48 },
+{ idLot: 781, quotePart: 48 },
+{ idLot: 782, quotePart: 38 },
+{ idLot: 783, quotePart: 48 },
+{ idLot: 784, quotePart: 48 },
+{ idLot: 785, quotePart: 46 },
+{ idLot: 786, quotePart: 48 },
+{ idLot: 787, quotePart: 63 },
+{ idLot: 788, quotePart: 48 },
+{ idLot: 789, quotePart: 48 },
+{ idLot: 790, quotePart: 48 },
+{ idLot: 791, quotePart: 46 },
+{ idLot: 792, quotePart: 46 },
+{ idLot: 793, quotePart: 48 },
+{ idLot: 794, quotePart: 48 },
+{ idLot: 795, quotePart: 48 },
+{ idLot: 796, quotePart: 44 },
+{ idLot: 797, quotePart: 44 },
+{ idLot: 798, quotePart: 63 },
+{ idLot: 799, quotePart: 48 },
+{ idLot: 800, quotePart: 48 },
+{ idLot: 801, quotePart: 46 },
+{ idLot: 802, quotePart: 46 },
+{ idLot: 803, quotePart: 46 },
+{ idLot: 804, quotePart: 46 },
+{ idLot: 805, quotePart: 48 },
+{ idLot: 806, quotePart: 48 },
+{ idLot: 807, quotePart: 44 },
+{ idLot: 808, quotePart: 44 },
+{ idLot: 809, quotePart: 63 },
+{ idLot: 810, quotePart: 48 },
+{ idLot: 811, quotePart: 48 },
+{ idLot: 812, quotePart: 48 },
+{ idLot: 813, quotePart: 46 },
+{ idLot: 814, quotePart: 48 },
+{ idLot: 815, quotePart: 48 },
+{ idLot: 816, quotePart: 63 },
+{ idLot: 817, quotePart: 63 },
+{ idLot: 818, quotePart: 63 },
+{ idLot: 819, quotePart: 48 },
+{ idLot: 820, quotePart: 62 },
+{ idLot: 821, quotePart: 47 },
+{ idLot: 822, quotePart: 47 },
+{ idLot: 823, quotePart: 45 },
+{ idLot: 824, quotePart: 45 },
+{ idLot: 825, quotePart: 47 },
+{ idLot: 826, quotePart: 43 },
+{ idLot: 827, quotePart: 45 },
+{ idLot: 828, quotePart: 38 },
+{ idLot: 829, quotePart: 38 },
+{ idLot: 830, quotePart: 38 },
+{ idLot: 831, quotePart: 45 },
+{ idLot: 832, quotePart: 45 },
+{ idLot: 833, quotePart: 45 },
+{ idLot: 834, quotePart: 47 },
+{ idLot: 835, quotePart: 47 },
+{ idLot: 836, quotePart: 47 },
+{ idLot: 837, quotePart: 47 },
+{ idLot: 838, quotePart: 47 },
+{ idLot: 839, quotePart: 43 },
+{ idLot: 840, quotePart: 45 },
+{ idLot: 841, quotePart: 47 },
+{ idLot: 842, quotePart: 47 },
+{ idLot: 843, quotePart: 45 },
+{ idLot: 844, quotePart: 45 },
+{ idLot: 845, quotePart: 45 },
+{ idLot: 846, quotePart: 45 },
+{ idLot: 847, quotePart: 47 },
+{ idLot: 848, quotePart: 47 },
+{ idLot: 849, quotePart: 47 },
+{ idLot: 850, quotePart: 47 },
+{ idLot: 851, quotePart: 47 },
+{ idLot: 852, quotePart: 47 },
+{ idLot: 853, quotePart: 45 },
+{ idLot: 854, quotePart: 45 },
+{ idLot: 855, quotePart: 45 },
+{ idLot: 856, quotePart: 43 },
+{ idLot: 857, quotePart: 47 },
+{ idLot: 858, quotePart: 43 },
+{ idLot: 859, quotePart: 47 },
+{ idLot: 860, quotePart: 47 },
+{ idLot: 861, quotePart: 45 },
+{ idLot: 862, quotePart: 45 },
+{ idLot: 863, quotePart: 47 },
+{ idLot: 864, quotePart: 47 },
+{ idLot: 865, quotePart: 47 },
+{ idLot: 866, quotePart: 47 },
+{ idLot: 867, quotePart: 43 },
+{ idLot: 868, quotePart: 47 },
+{ idLot: 869, quotePart: 47 },
+{ idLot: 870, quotePart: 47 },
+{ idLot: 871, quotePart: 47 },
+{ idLot: 872, quotePart: 45 },
+{ idLot: 873, quotePart: 45 },
+{ idLot: 874, quotePart: 45 },
+{ idLot: 875, quotePart: 47 },
+{ idLot: 876, quotePart: 47 },
+{ idLot: 877, quotePart: 47 },
+{ idLot: 878, quotePart: 45 },
+{ idLot: 879, quotePart: 43 },
+{ idLot: 880, quotePart: 47 },
+{ idLot: 881, quotePart: 47 },
+{ idLot: 882, quotePart: 45 },
+{ idLot: 883, quotePart: 45 },
+{ idLot: 884, quotePart: 47 },
+{ idLot: 885, quotePart: 47 },
+{ idLot: 886, quotePart: 43 },
+{ idLot: 887, quotePart: 47 },
+{ idLot: 888, quotePart: 47 },
+{ idLot: 889, quotePart: 45 },
+{ idLot: 890, quotePart: 47 },
+{ idLot: 891, quotePart: 47 },
+{ idLot: 892, quotePart: 43 },
+{ idLot: 893, quotePart: 47 },
+{ idLot: 894, quotePart: 47 },
+{ idLot: 895, quotePart: 45 },
+{ idLot: 896, quotePart: 47 },
+{ idLot: 897, quotePart: 47 },
+{ idLot: 898, quotePart: 47 },
+{ idLot: 899, quotePart: 47 },
+{ idLot: 900, quotePart: 38 },
+{ idLot: 901, quotePart: 47 },
+{ idLot: 902, quotePart: 47 },
+{ idLot: 903, quotePart: 45 },
+{ idLot: 904, quotePart: 45 },
+{ idLot: 905, quotePart: 45 },
+{ idLot: 906, quotePart: 45 },
+{ idLot: 907, quotePart: 47 },
+{ idLot: 908, quotePart: 45 },
+{ idLot: 909, quotePart: 45 },
+{ idLot: 910, quotePart: 47 },
+{ idLot: 911, quotePart: 45 },
+{ idLot: 912, quotePart: 45 },
+{ idLot: 913, quotePart: 45 },
+{ idLot: 914, quotePart: 47 },
+{ idLot: 915, quotePart: 47 },
+{ idLot: 916, quotePart: 44 },
+{ idLot: 917, quotePart: 44 },
+{ idLot: 918, quotePart: 47 },
+{ idLot: 919, quotePart: 45 },
+{ idLot: 920, quotePart: 47 },
+{ idLot: 921, quotePart: 47 },
+{ idLot: 922, quotePart: 47 },
+{ idLot: 923, quotePart: 45 },
+{ idLot: 924, quotePart: 45 },
+{ idLot: 925, quotePart: 45 },
+{ idLot: 926, quotePart: 46 },
+{ idLot: 927, quotePart: 47 },
+{ idLot: 928, quotePart: 47 },
+{ idLot: 929, quotePart: 44 },
+{ idLot: 930, quotePart: 44 },
+{ idLot: 931, quotePart: 45 },
+{ idLot: 932, quotePart: 45 },
+{ idLot: 933, quotePart: 47 },
+{ idLot: 934, quotePart: 45 },
+{ idLot: 935, quotePart: 45 },
+{ idLot: 936, quotePart: 47 },
+{ idLot: 937, quotePart: 45 },
+{ idLot: 938, quotePart: 47 },
+{ idLot: 939, quotePart: 47 },
+{ idLot: 940, quotePart: 62 },
+{ idLot: 941, quotePart: 62 },
+{ idLot: 942, quotePart: 62 },
+{ idLot: 943, quotePart: 47 },
+{ idLot: 944, quotePart: 47 },
+{ idLot: 945, quotePart: 43 },
+{ idLot: 946, quotePart: 47 }
+];
+
+var vm = new Vue({
+  el: '#app',
+  data: { 
+	listeLots,
+	budgetASL,
+	budgetCopro,
+	quotePartASL: 3868/10000,
+	quotePartInput: 0,
+	idBudgetASL: 0,
+	idBudgetCopro: 0
+  },
+  computed: {
+	sommeFraisASL: function() {	
+		let resultat = 0;
+		for (let budget of this.budgetASL) {
+			resultat += parseInt(budget.budgetPrevisionnel);
+		}
+		return resultat;
+	},
+	sommeFraisCopro: function() {	
+		let resultat = 0;
+		for (let budget of this.budgetCopro) {
+			resultat += parseInt(budget.budgetPrevisionnel);
+		}
+		return resultat;
+	},
+	sommeTantiemeCopro: function() {
+		let resultat = 0;
+		for (let lot of this.listeLots) {
+			resultat += parseInt(lot.quotePart);
+		}
+		return resultat;
+	}
+  },
+  methods: {
+	calculerParticipationFraisASL: function() {
+		return this.quotePartASL * this.sommeFraisASL;
+	},
+	updateParticipationFraisASL: function() {
+		this.budgetCopro[0].budgetPrevisionnel = this.calculerParticipationFraisASL();
+	},
+	ajouterLigneBudgetPrevisionnelAsl: function() {
+		this.budgetASL.push({
+			idBudget: this.idBudgetASL++, 
+			titre: '<Saisir un intitulé>', 
+			budgetPrevisionnel: 0,
+			edit: false
+		});
+	},
+	supprimerBudgetPrevisionnelAsl: function(index) {
+		indexTrouve = this.budgetASL.findIndex(i => i.idBudget === index);
+		this.budgetASL.splice(indexTrouve, 1);
+		this.updateParticipationFraisASL();
+	},
+	ajouterLigneBudgetPrevisionnelCopro: function() {
+		this.budgetCopro.push({
+			idBudget: this.idBudgetCopro++, 
+			titre: '<Saisir un intitulé>', 
+			budgetPrevisionnel: 0,
+			lectureSeule: false,
+			edit: false
+		});
+		
+	},
+	supprimerLigneBudgetPrevisionnelCopro: function(index) {
+		indexTrouve = this.budgetCopro.findIndex(i => i.idBudget === index);
+		this.budgetCopro.splice(indexTrouve, 1);
+	},
+	test: function(nomBudget, idBudget) {
+		nomInput = 'input_' + nomBudget + '_' + idBudget;
+		setTimeout(() => {
+			this.$refs[nomInput][0].focus();
+		});
+		
+	}
+  },
+  mounted: function() {
+	
+	// Init budget ASL
+	this.budgetASL.push({idBudget: this.idBudgetASL++, titre: 'Gardien/Concierge', budgetPrevisionnel: 40000, edit: false});
+	this.budgetASL.push({idBudget: this.idBudgetASL++, titre: 'Entretien des espaces verts', budgetPrevisionnel: 10000, edit: false});
+	this.budgetASL.push({idBudget: this.idBudgetASL++, titre: 'Divers', budgetPrevisionnel: 15000, edit: false});
+	
+	// Init budget copropriété
+	this.budgetCopro.push(
+		{idBudget: this.idBudgetCopro++, titre: 'Participation aux frais de l\'ASL', budgetPrevisionnel: -1, lectureSeule: true, edit: false},
+		{idBudget: this.idBudgetCopro++, titre: 'Entretien des parties communes', budgetPrevisionnel: 15000, lectureSeule: false, edit: false},
+		{idBudget: this.idBudgetCopro++, titre: 'Maintenance des ascenseurs', budgetPrevisionnel: 10000, lectureSeule: false, edit: false},
+		{idBudget: this.idBudgetCopro++, titre: 'Syndic', budgetPrevisionnel: 20000, lectureSeule: false, edit: false},
+		{idBudget: this.idBudgetCopro++, titre: 'Divers', budgetPrevisionnel: 15000, lectureSeule: false, edit: false}
+	);
+	
+	this.updateParticipationFraisASL();
+  }
+})
+</script>
+</body>
+
+
+</html>
